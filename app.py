@@ -1,6 +1,6 @@
 import streamlit as st
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import hashes
 import hashlib
 from datetime import datetime
 
@@ -245,9 +245,6 @@ def main():
                         else:
                             st.warning("No artist information found in the file.")
                         
-                        # Check if it's an old-style signature (in comments) or new steganographic signature
-                        is_old_style = any(line.startswith("# Digital Signature:") for line in obj_data.split('\n'))
-                        
                         # For both old and new style signatures, we need to clean the file
                         # of any authentication markers before verification
                         lines = obj_data.split('\n')
@@ -299,9 +296,6 @@ def main():
                                     verified = False
                             else:
                                 # Fall back to the old method if no original hash is available
-                                # Calculate hash for verification
-                                verify_hash = hashlib.sha256(unsigned_obj_data.encode()).digest().hex()
-                                
                                 verified = verify_signature(unsigned_obj_data.encode(), signature, public_key)
                                 
                             if verified:
