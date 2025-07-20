@@ -533,28 +533,32 @@ def main():
             
             if st.button("Create Artist Profile", use_container_width=True):
                 if new_artist_name and new_artist_email:
-                    # Generate keys for the new artist
-                    private_key, public_key, private_pem, public_pem = generate_keys(new_artist_name)
-                    
-                    # Create artist profile
-                    artist_info = {
-                        "name": new_artist_name,
-                        "email": new_artist_email,
-                        "website": new_artist_website,
-                        "created_at": datetime.now().isoformat(),
-                        "private_key": private_pem.decode(),
-                        "public_key": public_pem.decode()
-                    }
-                    
-                    # Save to database
-                    if save_artist_to_db(conn, artist_info):
-                        # Add to registry
-                        st.session_state['artist_registry'][new_artist_name] = artist_info
-                        st.session_state['current_artist'] = new_artist_name
-                        
-                        st.success(f"Created new artist profile for {new_artist_name}")
+                    # Check if artist name already exists in the registry
+                    if new_artist_name in st.session_state['artist_registry']:
+                        st.error(f"An artist with the name '{new_artist_name}' already exists.")
                     else:
-                        st.error(f"An artist with the name {new_artist_name} already exists.")
+                        # Generate keys for the new artist
+                        private_key, public_key, private_pem, public_pem = generate_keys(new_artist_name)
+                    
+                        # Create artist profile
+                        artist_info = {
+                            "name": new_artist_name,
+                            "email": new_artist_email,
+                            "website": new_artist_website,
+                            "created_at": datetime.now().isoformat(),
+                            "private_key": private_pem.decode(),
+                            "public_key": public_pem.decode()
+                        }
+                        
+                        # Save to database
+                        if save_artist_to_db(conn, artist_info):
+                            # Add to registry
+                            st.session_state['artist_registry'][new_artist_name] = artist_info
+                            st.session_state['current_artist'] = new_artist_name
+                            
+                            st.success(f"Created new artist profile for {new_artist_name}")
+                        else:
+                            st.error(f"An artist with the name {new_artist_name} already exists.")
                 else:
                     st.error("Artist name and email are required")
         
