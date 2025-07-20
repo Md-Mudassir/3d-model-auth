@@ -2,14 +2,11 @@ from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
 import hashlib
 import struct
-import numpy as np
-import re
 import json
 import base64
-from datetime import datetime
 
 # Generate RSA keys for an artist
-def generate_keys(artist_name):
+def generate_keys():
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     public_key = private_key.public_key()
     
