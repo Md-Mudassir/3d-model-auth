@@ -33,7 +33,7 @@ class VideoSignatureManager:
     Uses custom metadata fields to store signature information.
     """
     
-    SIGNATURE_KEY = "3d_model_signatures"
+    SIGNATURE_KEY = "comment"  # Use comment field for better MP4 compatibility
     VERSION_KEY = "signature_version"
     CURRENT_VERSION = "1.0"
     
@@ -109,23 +109,23 @@ class VideoSignatureManager:
             return False, f"Input video file not found: {input_video_path}"
         
         try:
-            # Use ffmpeg to add custom metadata
-            (
-                ffmpeg
-                .input(input_video_path)
-                .output(
-                    output_video_path,
-                    **{
-                        f'metadata:{self.SIGNATURE_KEY}': metadata_payload,
-                        'metadata:title': 'Authenticated 3D Content',
-                        'metadata:comment': f'Contains {len(self.signatures)} verified 3D models'
-                    },
-                    vcodec='copy',  # Don't re-encode video
-                    acodec='copy'   # Don't re-encode audio
-                )
-                .overwrite_output()
-                .run(quiet=True, capture_stdout=True, capture_stderr=True)
-            )
+            # Use ffmpeg to add custom metadata - try subprocess method for better compatibility
+            import subprocess
+            
+            cmd = [
+                'ffmpeg', '-i', input_video_path,
+                '-metadata', f'comment={metadata_payload}',
+                '-metadata', 'title=Authenticated 3D Content',
+                '-c:v', 'copy', '-c:a', 'copy',  # Copy video and audio streams
+                '-movflags', '+faststart',  # Optimize for web playback
+                '-y', output_video_path  # Overwrite output
+            ]
+            
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                return False, f"FFmpeg command failed: {result.stderr}"
             
             # Verify output file was created
             if os.path.exists(output_video_path):
@@ -133,11 +133,8 @@ class VideoSignatureManager:
             else:
                 return False, "Output file was not created"
                 
-        except ffmpeg.Error as e:
-            error_msg = f"FFmpeg error: {e.stderr.decode() if e.stderr else str(e)}"
-            return False, error_msg
         except Exception as e:
-            return False, f"Unexpected error: {str(e)}"
+            return False, f"Error during video processing: {str(e)}"
     
     def embed_signatures_fallback(self, input_video_path: str, output_video_path: str, 
                                  metadata_payload: str) -> Tuple[bool, str]:
@@ -150,9 +147,8 @@ class VideoSignatureManager:
         try:
             cmd = [
                 'ffmpeg', '-i', input_video_path,
-                '-metadata', f'{self.SIGNATURE_KEY}={metadata_payload}',
+                '-metadata', f'comment={metadata_payload}',
                 '-metadata', 'title=Authenticated 3D Content',
-                '-metadata', f'comment=Contains {len(self.signatures)} verified 3D models',
                 '-c', 'copy',  # Don't re-encode
                 '-y',  # Overwrite output file
                 output_video_path
@@ -185,22 +181,44 @@ class VideoSignatureManager:
             return None
             
         try:
-            # Use ffmpeg to probe metadata
-            probe = ffmpeg.probe(video_path)
+            # Use ffmpeg to probe metadata - try subprocess method first
+            import subprocess
+            import json
+            
+            cmd = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', video_path]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                print(f"FFprobe failed: {result.stderr}")
+                return None
+            
+            probe_data = json.loads(result.stdout)
             
             # Look for our signature metadata in format metadata
-            metadata = probe.get('format', {}).get('tags', {})
+            metadata = probe_data.get('format', {}).get('tags', {})
             
             # Try different possible key formats (ffmpeg can be inconsistent)
             signature_data = None
-            for key in [self.SIGNATURE_KEY, self.SIGNATURE_KEY.upper(), 
-                       self.SIGNATURE_KEY.lower(), f"TAG:{self.SIGNATURE_KEY}"]:
+            possible_keys = [
+                self.SIGNATURE_KEY,
+                self.SIGNATURE_KEY.upper(), 
+                self.SIGNATURE_KEY.lower(),
+                "COMMENT",
+                "Comment"
+            ]
+            
+            for key in possible_keys:
                 if key in metadata:
                     signature_data = metadata[key]
                     break
             
             if not signature_data:
+                # Debug: print all available metadata keys
+                print(f"Debug: No signature found. Available metadata keys: {list(metadata.keys())}")
+                for key, value in metadata.items():
+                    print(f"  {key}: {value[:100]}...")
                 return None
+            
             
             # Decode base64 and parse JSON
             try:

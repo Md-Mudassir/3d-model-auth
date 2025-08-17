@@ -15,7 +15,7 @@ import os
 from datetime import datetime
 
 # Import our video authentication system
-from utils.video_auth import verify_authenticated_video
+from utils.video_auth import VideoSignatureManager
 from utils.database import setup_database, load_artists_from_db
 
 class MVAPVideoPlayer:
@@ -125,7 +125,9 @@ class MVAPVideoPlayer:
         self.root.update()
         
         try:
-            all_verified, results = verify_authenticated_video(file_path, self.artist_registry)
+            video_signature_manager = VideoSignatureManager()
+            all_verified, results = video_signature_manager.verify_video_signatures(file_path, self.artist_registry)
+            
             
             # Update authentication display
             self.auth_details_text.config(state="normal")
