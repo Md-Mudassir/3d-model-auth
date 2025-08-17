@@ -3,25 +3,27 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
 import hashlib
 from datetime import datetime
+import os
+import tempfile
 
 from utils.viewer import render_3d_model
 from utils.database import setup_database, load_artists_from_db, save_artist_to_db
 from utils.crypto import generate_keys, load_key_from_pem, generate_signature, embed_signature, extract_signature, verify_signature
-
+from utils.video_auth import VideoSignatureManager, create_authenticated_video, verify_authenticated_video
 
 # Streamlit App
 def main():
     st.set_page_config(page_title="3D Model Digital Signature Tool", page_icon="🔏", layout="centered")
     st.title("🔏 3D Model Digital Signature Tool")
-    st.caption("Digitally sign and verify 3D model (.obj) files with ease and confidence.")
+    st.caption("Digitally sign and verify 3D model (.obj) files and videos with ease and confidence.")
     
     # Setup database connection
     conn = setup_database()
-    
+
     # Initialize artist registry from database
     if 'artist_registry' not in st.session_state:
         st.session_state['artist_registry'] = load_artists_from_db(conn)
-        
+
     # Initialize current artist if it doesn't exist
     if 'current_artist' not in st.session_state:
         st.session_state['current_artist'] = None
@@ -49,7 +51,7 @@ def main():
     """, unsafe_allow_html=True)
 
     # Create tabs for the application
-    tab1, tab2, tab3 = st.tabs(["👨‍🎨 Artist Management", "🖊️ Sign File", "🔎 Verify File"])
+    tab1, tab2, tab3, tab4 = st.tabs(["👨‍🎨 Artist Management", "🖊️ Sign File", "🔎 Verify File", "🎬 Video Authentication"])
     
     # Handle artist management in tab1
     with tab1:
@@ -177,7 +179,7 @@ def main():
                             "timestamp": datetime.now().isoformat()
                         }
                         
-                        # First, clean the file of any existing authentication markers
+                        # First, clean the file of any ex`isting authentication markers
                         clean_lines = [line for line in obj_data.split('\n') 
                                       if not line.startswith("# Digital Signature:") 
                                       and not "embedded authentication" in line]
@@ -308,6 +310,186 @@ def main():
                         st.warning("No digital signature found in the file.")
         else:
             st.info("Upload a signed .obj file to enable verification.")
+
+    with tab4:
+        st.header("🎬 Video Authentication")
+        st.markdown("""
+        **Authenticate Videos with 3D Model Signatures**
+        
+        Embed 3D model signatures into video metadata during export or verify existing authenticated videos.
+        This creates a universal protocol for protecting 3D content in video streams.
+        """)
+        
+        video_tab1, video_tab2 = st.tabs(["📤 Create Authenticated Video", "🔍 Verify Video"])
+        
+        with video_tab1:
+            st.subheader("Create Authenticated Video")
+            st.markdown("""
+            **How it works:**
+            1. Upload a video file and signed 3D model files used in the video
+            2. The system extracts signatures from the 3D models
+            3. Signatures are embedded into the video metadata
+            4. Download the authenticated video with embedded signatures
+            """)
+            
+            uploaded_video = st.file_uploader("Upload Video File", type=["mp4", "avi", "mov", "mkv"], key="video-upload")
+            uploaded_models = st.file_uploader("Upload Signed 3D Models (.obj)", type=["obj"], accept_multiple_files=True, key="models-upload")
+            
+            if uploaded_video and uploaded_models:
+                st.success(f"Video: {uploaded_video.name} ({uploaded_video.size} bytes)")
+                st.success(f"Models: {len(uploaded_models)} files uploaded")
+                
+                if st.button("🔐 Create Authenticated Video", use_container_width=True):
+                    with st.spinner("Processing video and extracting signatures..."):
+                        try:
+                            # Create temporary files
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
+                                temp_video.write(uploaded_video.read())
+                                temp_video_path = temp_video.name
+                            
+                            # Extract signatures from uploaded models
+                            model_signatures = []
+                            for model_file in uploaded_models:
+                                obj_data = model_file.read().decode("utf-8")
+                                signature, original_hash, artist_info = extract_signature(obj_data)
+                                
+                                if signature and artist_info:
+                                    model_signatures.append({
+                                        'model_name': model_file.name,
+                                        'signature': signature,
+                                        'artist_info': artist_info,
+                                        'model_hash': original_hash
+                                    })
+                                    st.info(f"✅ Extracted signature from {model_file.name} by {artist_info.get('name', 'Unknown')}")
+                                else:
+                                    st.warning(f"⚠️ No signature found in {model_file.name}")
+                            
+                            if model_signatures:
+                                # Create authenticated video
+                                with tempfile.NamedTemporaryFile(delete=False, suffix="_authenticated.mp4") as temp_output:
+                                    temp_output_path = temp_output.name
+                                
+                                success, error_message = create_authenticated_video(temp_video_path, temp_output_path, model_signatures)
+                                
+                                if success:
+                                    # Read the authenticated video for download
+                                    with open(temp_output_path, 'rb') as f:
+                                        authenticated_video_data = f.read()
+                                    
+                                    st.success(f"✅ Successfully created authenticated video with {len(model_signatures)} model signatures!")
+                                    
+                                    # Show signature summary
+                                    st.markdown("**Embedded Signatures:**")
+                                    for sig in model_signatures:
+                                        st.markdown(f"• **{sig['model_name']}** by {sig['artist_info'].get('name', 'Unknown')}")
+                                    
+                                    st.download_button(
+                                        label="⬇️ Download Authenticated Video",
+                                        data=authenticated_video_data,
+                                        file_name=f"authenticated_{uploaded_video.name}",
+                                        mime="video/mp4"
+                                    )
+                                else:
+                                    st.error(f"❌ Failed to create authenticated video: {error_message}")
+                                    
+                                    # Show troubleshooting tips
+                                    if "FFmpeg" in error_message:
+                                        st.markdown("""
+                                        **Troubleshooting FFmpeg Issues:**
+                                        
+                                        1. **Install FFmpeg:**
+                                           ```bash
+                                           # macOS
+                                           brew install ffmpeg
+                                           
+                                           # Ubuntu/Debian
+                                           sudo apt install ffmpeg
+                                           
+                                           # Windows
+                                           # Download from https://ffmpeg.org/download.html
+                                           ```
+                                        
+                                        2. **Install Python library:**
+                                           ```bash
+                                           pip install ffmpeg-python
+                                           ```
+                                        
+                                        3. **Verify installation:**
+                                           ```bash
+                                           ffmpeg -version
+                                           ```
+                                        """)
+                            else:
+                                st.error("❌ No valid signatures found in uploaded models. Please upload signed .obj files.")
+                            
+                            # Cleanup
+                            os.unlink(temp_video_path)
+                            
+                        except Exception as e:
+                            st.error(f"❌ Error processing video: {str(e)}")
+            else:
+                if not uploaded_video:
+                    st.info("📤 Upload a video file to get started")
+                if not uploaded_models:
+                    st.info("📤 Upload signed 3D model files (.obj) used in the video")
+        
+        with video_tab2:
+            st.subheader("Verify Authenticated Video")
+            st.markdown("""
+            **Verify Video Authentication:**
+            1. Upload an authenticated video file
+            2. The system extracts and verifies all embedded 3D model signatures
+            3. View verification results and artist information
+            """)
+            
+            uploaded_verify_video = st.file_uploader("Upload Authenticated Video", type=["mp4", "avi", "mov", "mkv"], key="verify-video-upload")
+            
+            if uploaded_verify_video:
+                st.success(f"Video: {uploaded_verify_video.name} ({uploaded_verify_video.size} bytes)")
+                
+                if st.button("🔍 Verify Video Signatures", use_container_width=True):
+                    with st.spinner("Extracting and verifying signatures..."):
+                        try:
+                            # Create temporary file
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
+                                temp_video.write(uploaded_verify_video.read())
+                                temp_video_path = temp_video.name
+                            
+                            # Verify signatures
+                            all_verified, results = verify_authenticated_video(temp_video_path, st.session_state['artist_registry'])
+                            
+                            if results and not results[0].get('error'):
+                                if all_verified:
+                                    st.success("✅ All 3D model signatures verified successfully!")
+                                else:
+                                    st.warning("⚠️ Some signatures could not be verified")
+                                
+                                st.markdown("**Verification Results:**")
+                                for result in results:
+                                    if result.get('verified'):
+                                        st.markdown(f"""
+                                        **✅ {result['model_name']}**
+                                        - Artist: {result['artist_name']}
+                                        - Email: {result['artist_info'].get('email', 'N/A')}
+                                        - Signed: {result.get('timestamp', 'Unknown')}
+                                        """)
+                                    else:
+                                        st.markdown(f"""
+                                        **❌ {result.get('model_name', 'Unknown')}**
+                                        - Error: {result.get('error', 'Unknown error')}
+                                        """)
+                            else:
+                                st.error("❌ No signature data found in video or verification failed")
+                                if results and results[0].get('error'):
+                                    st.error(results[0]['error'])
+                            
+                            # Cleanup
+                            os.unlink(temp_video_path)
+                            
+                        except Exception as e:
+                            st.error(f"❌ Error verifying video: {str(e)}")
+            else:
+                st.info("📤 Upload an authenticated video file to verify signatures")
 
 if __name__ == "__main__":
     main()

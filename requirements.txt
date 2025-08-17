@@ -1,2 +1,7 @@
 streamlit
 cryptography
+streamlit-stl
+moviepy
+ffmpeg-python
+opencv-python
+pillow
