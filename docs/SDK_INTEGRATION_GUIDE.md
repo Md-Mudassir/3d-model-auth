@@ -1,4 +1,8 @@
-# 3MVAP SDK Integration Guide
+# 3D Model Video Authentication Protocol (3MVAP) SDK Integration Guide v2.0
+
+## Overview
+
+This guide provides comprehensive instructions for integrating the 3D Model Video Authentication Protocol (3MVAP) v2.0 into your applications, video players, and 3D software tools. Version 2.0 introduces secure mode with tamper-resistant cryptographic protection alongside backward-compatible basic mode.
 
 ## Quick Start for Developers
 
@@ -38,7 +42,7 @@ cd lib3mvap && make install
 
 ## Basic Usage
 
-### Python - Video Verification
+### Python - Video Verification (Basic Mode)
 
 ```python
 from mvap import VideoAuthenticator, ArtistRegistry
@@ -47,7 +51,7 @@ from mvap import VideoAuthenticator, ArtistRegistry
 authenticator = VideoAuthenticator()
 registry = ArtistRegistry.load_default()
 
-# Verify a video
+# Verify a video (basic mode)
 result = authenticator.verify_video("video.mp4", registry)
 
 if result.is_authenticated:
@@ -56,6 +60,34 @@ if result.is_authenticated:
         print(f"  - {sig.model_name} by {sig.artist_name}")
 else:
     print("❌ Video authentication failed")
+```
+
+### Python - Secure Mode Verification
+
+```python
+from mvap import SecureVideoAuthenticator, ArtistRegistry
+
+# Initialize secure authenticator
+authenticator = SecureVideoAuthenticator()
+registry = ArtistRegistry.load_default()
+
+# Verify with tamper detection
+result = authenticator.verify_secure_video("video.mp4", registry)
+
+if result.is_authenticated:
+    print(f"✅ Secure video verified - Security Level: {result.security_level}")
+    print(f"Content binding: {'✓' if result.content_bound else '✗'}")
+    print(f"Integrity check: {'✓' if result.integrity_verified else '✗'}")
+    
+    if result.tamper_detected:
+        print("⚠️  Tampering detected in metadata!")
+    
+    for sig in result.signatures:
+        print(f"  - {sig.model_name} by {sig.artist_name}")
+else:
+    print("❌ Secure video authentication failed")
+    if result.error_details:
+        print(f"Error: {result.error_details}")
 ```
 
 ### JavaScript - Browser Integration
@@ -145,7 +177,7 @@ class BackgroundVerifier:
 
 ### 2. 3D Software Integration
 
-#### Export Hook
+#### Export Hook - Basic Mode
 
 ```python
 # Blender/Maya/Cinema 4D integration
@@ -162,8 +194,88 @@ class VideoExportHook:
             self.register_post_export_callback(output_path, signatures)
 
     def on_export_complete(self, video_path, signatures):
-        # Embed signatures into video metadata
+        # Embed signatures into video metadata (basic mode)
         self.authenticator.embed_signatures(video_path, signatures)
+```
+
+#### Export Hook - Secure Mode
+
+```python
+# Secure mode integration with tamper protection
+class SecureVideoExportHook:
+    def __init__(self, security_level="secure"):
+        self.authenticator = SecureVideoAuthenticator()
+        self.security_level = security_level
+
+    def on_export_complete(self, video_path, signatures):
+        # Create secure authentication with content binding
+        result = self.authenticator.create_secure_authentication(
+            video_path=video_path,
+            signatures=signatures,
+            security_level=self.security_level
+        )
+        
+        if result.success:
+            print(f"✅ Secure authentication embedded - Level: {self.security_level}")
+            print(f"Integrity protection: ✓")
+            print(f"Content binding: ✓")
+            print(f"Redundant storage: ✓")
+        else:
+            print(f"❌ Failed to embed secure authentication: {result.error}")
+```
+
+### 3. Secure Mode API Reference
+
+#### SecureVideoAuthenticator Class
+
+```python
+class SecureVideoAuthenticator:
+    def create_secure_authentication(self, video_path, signatures, security_level="secure"):
+        """
+        Create tamper-resistant video authentication
+        
+        Args:
+            video_path (str): Path to video file
+            signatures (list): List of 3D model signatures
+            security_level (str): "secure" for full protection
+            
+        Returns:
+            SecureAuthResult: Result with success status and details
+        """
+        
+    def verify_secure_video(self, video_path, registry):
+        """
+        Verify secure video with tamper detection
+        
+        Args:
+            video_path (str): Path to video file
+            registry (ArtistRegistry): Artist public key registry
+            
+        Returns:
+            SecureVerificationResult: Detailed verification result
+        """
+        
+    def detect_tampering(self, video_path):
+        """
+        Check for metadata tampering
+        
+        Returns:
+            TamperDetectionResult: Tampering analysis
+        """
+```
+
+#### SecureVerificationResult Class
+
+```python
+class SecureVerificationResult:
+    is_authenticated: bool          # Overall authentication status
+    security_level: str            # "basic", "secure", or "unknown"
+    content_bound: bool            # Content binding verification
+    integrity_verified: bool      # Metadata integrity check
+    tamper_detected: bool          # Tampering detection result
+    signatures: List[Signature]    # Verified signatures
+    error_details: str            # Error information if failed
+    redundancy_check: bool        # Cross-field verification result
 ```
 
 ### 3. Streaming Platform Integration

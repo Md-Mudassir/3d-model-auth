@@ -10,6 +10,7 @@ from utils.viewer import render_3d_model
 from utils.database import setup_database, load_artists_from_db, save_artist_to_db
 from utils.crypto import generate_keys, load_key_from_pem, generate_signature, embed_signature, extract_signature, verify_signature
 from utils.video_auth import VideoSignatureManager, create_authenticated_video, verify_authenticated_video
+from utils.secure_video_auth import create_secure_authenticated_video
 
 # Streamlit App
 def main():
@@ -365,11 +366,23 @@ def main():
                                     st.warning(f"⚠️ No signature found in {model_file.name}")
                             
                             if model_signatures:
+                                # Security level selection
+                                security_level = st.radio(
+                                    "Choose Security Level:",
+                                    ["🔒 Secure (Recommended)", "⚠️ Basic (Legacy)"],
+                                    help="Secure mode provides tamper-resistant protection with cryptographic integrity verification."
+                                )
+                                
                                 # Create authenticated video
                                 with tempfile.NamedTemporaryFile(delete=False, suffix="_authenticated.mp4") as temp_output:
                                     temp_output_path = temp_output.name
                                 
-                                success, error_message = create_authenticated_video(temp_video_path, temp_output_path, model_signatures)
+                                if security_level.startswith("🔒"):
+                                    success, error_message = create_secure_authenticated_video(temp_video_path, temp_output_path, model_signatures)
+                                    security_info = "**Security Features:** Cryptographic integrity protection, content binding, redundant storage, tamper detection"
+                                else:
+                                    success, error_message = create_authenticated_video(temp_video_path, temp_output_path, model_signatures)
+                                    security_info = "**Security Warning:** Basic mode is vulnerable to tampering. Use secure mode for production."
                                 
                                 if success:
                                     # Read the authenticated video for download
@@ -377,6 +390,9 @@ def main():
                                         authenticated_video_data = f.read()
                                     
                                     st.success(f"✅ Successfully created authenticated video with {len(model_signatures)} model signatures!")
+                                    
+                                    # Show security info
+                                    st.info(security_info)
                                     
                                     # Show signature summary
                                     st.markdown("**Embedded Signatures:**")

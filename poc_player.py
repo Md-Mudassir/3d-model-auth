@@ -16,6 +16,7 @@ from datetime import datetime
 
 # Import our video authentication system
 from utils.video_auth import VideoSignatureManager
+from utils.secure_video_auth import verify_secure_authenticated_video
 from utils.database import setup_database, load_artists_from_db
 
 class MVAPVideoPlayer:
@@ -125,9 +126,16 @@ class MVAPVideoPlayer:
         self.root.update()
         
         try:
-            video_signature_manager = VideoSignatureManager()
-            all_verified, results = video_signature_manager.verify_video_signatures(file_path, self.artist_registry)
+            # Try secure verification first, then fallback to basic
+            all_verified, results = verify_secure_authenticated_video(file_path, self.artist_registry)
             
+            # If secure verification fails, try basic verification
+            if results and results[0].get('error') == "No secure signature data found in video":
+                video_signature_manager = VideoSignatureManager()
+                all_verified, results = video_signature_manager.verify_video_signatures(file_path, self.artist_registry)
+                security_level = "Basic"
+            else:
+                security_level = "Secure" if not (results and results[0].get('error')) else "None"
             
             # Update authentication display
             self.auth_details_text.config(state="normal")
@@ -137,13 +145,25 @@ class MVAPVideoPlayer:
                 if all_verified:
                     self.auth_status_label.config(text="✅ All 3D models verified", 
                                                  foreground="green")
-                    status_text = f"Authentication: VERIFIED\n"
-                    status_text += f"Models found: {len(results)}\n\n"
+                    status_text = f"Authentication: VERIFIED ({security_level})\n"
+                    status_text += f"Models found: {len(results)}\n"
+                    if security_level == "Secure":
+                        status_text += "🔒 Enhanced security: Tamper-resistant protection active\n\n"
+                    elif security_level == "Basic":
+                        status_text += "⚠️ Basic security: Vulnerable to tampering\n\n"
+                    else:
+                        status_text += "\n"
                 else:
                     self.auth_status_label.config(text="⚠️ Some models unverified", 
                                                  foreground="orange")
-                    status_text = f"Authentication: PARTIAL\n"
-                    status_text += f"Models found: {len(results)}\n\n"
+                    status_text = f"Authentication: PARTIAL ({security_level})\n"
+                    status_text += f"Models found: {len(results)}\n"
+                    if security_level == "Secure":
+                        status_text += "🔒 Enhanced security: Tamper-resistant protection active\n\n"
+                    elif security_level == "Basic":
+                        status_text += "⚠️ Basic security: Vulnerable to tampering\n\n"
+                    else:
+                        status_text += "\n"
                 
                 # Show model details
                 for i, result in enumerate(results, 1):

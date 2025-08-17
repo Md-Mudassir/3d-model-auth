@@ -1,6 +1,6 @@
 # 3D-Model-Auth
 
-A robust tool for embedding and verifying digital signatures in `.obj` 3D model files and video content using advanced steganography and metadata embedding. Protect your 3D assets from piracy and unauthorized modifications using RSA cryptography and create a universal protocol for video content authentication.
+A robust tool for embedding and verifying digital signatures in `.obj` 3D model files and video content using advanced steganography and secure metadata embedding. Protect your 3D assets from piracy and unauthorized modifications using RSA cryptography and create a tamper-resistant universal protocol for video content authentication.
 
 ## Features
 
@@ -13,8 +13,13 @@ A robust tool for embedding and verifying digital signatures in `.obj` 3D model 
 - **Tamper-Resistant**: Signatures are distributed across multiple vertices, making them difficult to detect or remove.
 - **Signature Verification**: Authenticate files, detect unauthorized modifications, and identify the original artist.
 
-### **🎬 Video Authentication Protocol (NEW)**
+### **🎬 Secure Video Authentication Protocol (ENHANCED)**
 
+- **Two Security Levels**: Choose between Basic (legacy) and Secure (tamper-resistant) authentication modes
+- **Cryptographic Protection**: HMAC signatures protect metadata integrity against tampering
+- **Content Binding**: Signatures tied to specific video content prevent transplantation attacks
+- **Redundant Storage**: Multiple metadata fields (comment, description, album) for tamper detection
+- **Obfuscation**: XOR encoding hides authentication data from casual inspection
 - **Universal Video Protection**: Embed 3D model signatures directly into video metadata during export/rendering
 - **Metadata-Based Verification**: Lightweight verification system that checks video metadata instead of processing frames
 - **Production Pipeline Integration**: Blender addon for seamless integration into 3D workflows
@@ -71,12 +76,13 @@ A robust tool for embedding and verifying digital signatures in `.obj` 3D model 
 
 ```
 3d-model-auth/
-├── app.py                          # Main Streamlit app with video authentication
+├── app.py                          # Main Streamlit app with secure video authentication
 ├── utils/
 │   ├── crypto.py                   # Digital signature and steganography logic
 │   ├── database.py                 # Database setup and artist management
 │   ├── viewer.py                   # 3D model viewer (Three.js via Streamlit)
-│   └── video_auth.py               # Video metadata authentication system
+│   ├── video_auth.py               # Basic video metadata authentication system
+│   └── secure_video_auth.py        # Secure tamper-resistant video authentication
 ├── blender_plugin/
 │   └── video_auth_addon.py         # Blender addon for video export integration
 ├── data/                           # SQLite DB and uploaded files (auto-created)
@@ -111,22 +117,37 @@ A robust tool for embedding and verifying digital signatures in `.obj` 3D model 
 3. The system will display the embedded artist information (name, email, website).
 4. You'll see whether the file is authentic and who created it.
 
-### **🎬 Video Authentication**
+### **🎬 Secure Video Authentication**
 
 #### **Create Authenticated Video**
 
 1. Navigate to the **Video Authentication** tab.
 2. Upload a video file and the signed `.obj` models used in that video.
-3. The system extracts signatures from the 3D models.
-4. Click **Create Authenticated Video** to embed signatures into video metadata.
-5. Download the authenticated video with embedded protection.
+3. Choose your security level:
+   - **Secure Mode** (Recommended): Tamper-resistant protection with cryptographic integrity
+   - **Basic Mode**: Legacy compatibility mode (vulnerable to tampering)
+4. The system extracts signatures from the 3D models.
+5. Click **Create Authenticated Video** to embed signatures into video metadata.
+6. Download the authenticated video with embedded protection.
 
 #### **Verify Authenticated Video**
 
 1. Upload an authenticated video file.
 2. Click **Verify Video Signatures** to check all embedded signatures.
-3. View verification results showing which models are authentic and their artists.
+3. View verification results showing:
+   - Security level (Secure/Basic/None)
+   - Which models are authentic and their artists
+   - Tamper detection alerts (if applicable)
 4. The system provides instant feedback without processing video frames.
+
+#### **POC Video Player**
+
+Use the included POC video player (`poc_player.py`) to:
+
+- Play authenticated videos with real-time verification
+- See security level indicators (🔒 Secure, ⚠️ Basic)
+- View detailed authentication information
+- Detect tampering attempts automatically
 
 ### **Blender Integration**
 
@@ -146,18 +167,32 @@ A robust tool for embedding and verifying digital signatures in `.obj` 3D model 
 4. **Steganographic Embedding**: Both signature and artist data are embedded by making imperceptible modifications to vertex coordinates in the 3D model.
 5. **Verification**: When verifying, the application extracts the hidden signature and artist information, then validates the signature against the file content.
 
-### **Video Authentication Protocol**
+### **Secure Video Authentication Protocol**
+
+#### **Basic Mode (Legacy)**
 
 1. **Export-Time Embedding**: During video rendering/export, 3D model signatures are collected and embedded into video metadata.
-2. **Metadata Storage**: Signatures are stored as Base64-encoded JSON in custom metadata fields.
-3. **Player-Side Verification**: Media players or browser extensions can read metadata and verify signatures before playback.
-4. **Universal Protocol**: Any video platform or player can implement this verification system.
+2. **Metadata Storage**: Signatures are stored as Base64-encoded JSON in the comment metadata field.
+3. **Player-Side Verification**: Media players can read metadata and verify signatures before playback.
+4. **Vulnerability**: Easily tampered with using standard video editing tools.
+
+#### **Secure Mode (Recommended)**
+
+1. **Cryptographic Protection**: HMAC signatures protect metadata integrity using a system key.
+2. **Content Binding**: Video content hash prevents signature transplantation between videos.
+3. **Redundant Storage**: Signatures stored in multiple metadata fields (comment, description, album).
+4. **Obfuscation**: XOR encoding with double Base64 encoding hides data from casual inspection.
+5. **Tamper Detection**: Automatic detection of metadata modifications or inconsistencies.
+6. **Player-Side Verification**: Enhanced verification checks all security layers before validation.
+7. **Enterprise Security**: Suitable for production environments requiring tamper-resistant protection.
 
 ## Universal Protocol Specification
 
 The video authentication system creates a universal protocol for protecting 3D content in videos:
 
 ### **Metadata Format**
+
+#### **Basic Mode Format**
 
 ```json
 {
@@ -178,6 +213,32 @@ The video authentication system creates a universal protocol for protecting 3D c
   ]
 }
 ```
+
+#### **Secure Mode Format**
+
+```json
+{
+  "version": "2.0",
+  "security_level": "secure",
+  "content_hash": "sha256_video_content_hash",
+  "created_at": "2025-01-17T14:26:38+05:30",
+  "signatures": [
+    {
+      "model_name": "character.obj",
+      "signature": "rsa_signature_base64",
+      "artist_info": {
+        "name": "Artist Name",
+        "email": "artist@example.com"
+      },
+      "model_hash": "sha256_model_hash",
+      "timestamp": "2025-01-17T14:26:38+05:30"
+    }
+  ],
+  "integrity_signature": "hmac_sha256_signature"
+}
+```
+
+**Note**: Secure mode data is XOR-obfuscated and Base64-encoded before storage.
 
 ### **Integration Points**
 
@@ -205,10 +266,13 @@ The video authentication system creates a universal protocol for protecting 3D c
 ### **Video Content Protection**
 
 - **Universal DRM**: Create a universal protocol for protecting 3D content in video streams.
+- **Tamper-Resistant Security**: Secure mode provides enterprise-grade protection against modification attacks.
 - **Content Verification**: Verify that videos contain only authenticated 3D models before playback.
 - **Piracy Prevention**: Detect and block videos containing unauthorized 3D content.
 - **Platform Integration**: Enable streaming platforms to verify content authenticity automatically.
 - **Production Pipeline**: Integrate authentication directly into 3D rendering workflows.
+- **Forensic Analysis**: Detect tampering attempts and unauthorized modifications.
+- **Content Binding**: Prevent signature transplantation between different videos.
 
 ## UI/UX Highlights
 
@@ -216,8 +280,11 @@ The video authentication system creates a universal protocol for protecting 3D c
 - **Security:**
   - Prevents duplicate artist names.
   - Prevents re-signing of already signed models (shows error with original artist info).
+  - Security level selection with clear warnings about tampering vulnerabilities.
+  - Visual security indicators in POC player (🔒 Secure, ⚠️ Basic).
 - **Immediate Feedback:** User-friendly error and success messages throughout the app.
 - **Video Processing:** Streamlined workflow for creating and verifying authenticated videos.
+- **Enhanced Player:** POC video player with real-time authentication display and tamper detection.
 
 ## License
 

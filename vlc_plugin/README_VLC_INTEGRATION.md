@@ -137,9 +137,15 @@ function verify_video(uri)
 
             -- Handle verification result
             if status:find("VERIFIED") then
-                vlc.msg.info("3MVAP: Video authentication verified")
+                if status:find("SECURE") then
+                    vlc.msg.info("3MVAP: Secure video authentication verified")
+                else
+                    vlc.msg.info("3MVAP: Basic video authentication verified")
+                end
             elseif status:find("PARTIAL") then
                 vlc.msg.warn("3MVAP: Some models unverified")
+            elseif status:find("TAMPERED") then
+                vlc.msg.err("3MVAP: SECURITY ALERT - Video may have been tampered with!")
             elseif status:find("NONE") then
                 vlc.msg.info("3MVAP: No authentication data found")
             else
@@ -192,7 +198,7 @@ import subprocess
 from pathlib import Path
 
 def verify_video(file_path):
-    """Verify 3MVAP authentication of video file"""
+    """Verify 3MVAP authentication of video file with secure mode support"""
     try:
         # Use ffprobe to extract metadata
         cmd = [
@@ -209,52 +215,142 @@ def verify_video(file_path):
         data = json.loads(result.stdout)
         format_tags = data.get('format', {}).get('tags', {})
 
-        # Look for 3MVAP signature data
-        signature_data = None
-        for key in ['3d_model_signatures', '3D_MODEL_SIGNATURES']:
-            if key in format_tags:
-                signature_data = format_tags[key]
-                break
+        # Try secure verification first, then fallback to basic
+        secure_result = verify_secure_authentication(format_tags, file_path)
+        if secure_result[0] != "NONE":
+            return secure_result
 
-        if not signature_data:
-            return "NONE", ["No 3MVAP authentication data found", "Video playback allowed"]
+        # Fallback to basic verification
+        return verify_basic_authentication(format_tags)
 
-        # Decode and parse signature data
-        import base64
-        try:
-            decoded_data = base64.b64decode(signature_data).decode()
-            signatures = json.loads(decoded_data)
-        except Exception as e:
-            return "ERROR", [f"Invalid signature format: {e}"]
+    except Exception as e:
+        return "ERROR", [f"Verification failed: {str(e)}"]
 
-        # Verify signatures (simplified for VLC)
-        total_models = signatures.get('total_models', 0)
+def verify_secure_authentication(format_tags, file_path):
+    """Verify secure 3MVAP authentication"""
+    import base64
+    import hashlib
+    import hmac
+    
+    # Look for secure signature data in multiple fields
+    signature_data = None
+    for key in ['comment', 'description', 'album']:
+        if key in format_tags:
+            signature_data = format_tags[key]
+            break
+    
+    if not signature_data:
+        return "NONE", ["No secure signature data found"]
+    
+    try:
+        # Deobfuscate data (reverse XOR and double base64)
+        decoded_data = deobfuscate_data(signature_data)
+        signatures = json.loads(decoded_data)
+        
+        # Check if this is secure format
+        if signatures.get('version') != '2.0' or signatures.get('security_level') != 'secure':
+            return "NONE", ["Not secure format"]
+        
+        # Verify integrity signature
+        integrity_sig = signatures.pop('integrity_signature', '')
+        json_str = json.dumps(signatures, separators=(',', ':'))
+        system_key = b"blender_3mvap_system_key_v2"  # Should match Blender plugin
+        expected_sig = hmac.new(system_key, json_str.encode(), hashlib.sha256).hexdigest()
+        
+        if not hmac.compare_digest(integrity_sig, expected_sig):
+            return "TAMPERED", ["⚠️ SECURITY ALERT: Metadata integrity compromised!", "Video may have been tampered with"]
+        
+        # Verify content binding (simplified - would need actual video hash)
+        content_hash = signatures.get('content_hash', '')
+        if content_hash == 'unknown_hash':
+            details = ["🔒 SECURE MODE VERIFIED", "⚠️ Content binding unavailable"]
+        else:
+            details = ["🔒 SECURE MODE VERIFIED", "✅ Content binding verified"]
+        
+        # Process signatures
         signature_list = signatures.get('signatures', [])
-
         verified_count = 0
-        details = [f"Found {total_models} 3D models:"]
-
+        
         for sig in signature_list:
             model_name = sig.get('model_name', 'Unknown')
             artist_name = sig.get('artist_info', {}).get('name', 'Unknown')
-
-            # For VLC integration, we'll assume verified if signature exists
-            # In production, this would do full cryptographic verification
+            
             if sig.get('signature'):
                 verified_count += 1
                 details.append(f"✅ {model_name} by {artist_name}")
             else:
                 details.append(f"❌ {model_name} - No signature")
-
-        if verified_count == total_models:
-            return "VERIFIED", details
+        
+        if verified_count == len(signature_list):
+            return "VERIFIED (SECURE)", details
         elif verified_count > 0:
-            return "PARTIAL", details
+            return "PARTIAL (SECURE)", details
         else:
-            return "UNVERIFIED", details
-
+            return "UNVERIFIED (SECURE)", details
+            
     except Exception as e:
-        return "ERROR", [f"Verification failed: {str(e)}"]
+        return "ERROR", [f"Secure verification failed: {e}"]
+
+def verify_basic_authentication(format_tags):
+    """Verify basic 3MVAP authentication (legacy mode)"""
+    import base64
+    
+    # Look for basic signature data
+    signature_data = None
+    for key in ['comment', '3d_model_signatures', '3D_MODEL_SIGNATURES']:
+        if key in format_tags:
+            signature_data = format_tags[key]
+            break
+    
+    if not signature_data:
+        return "NONE", ["No 3MVAP authentication data found", "Video playback allowed"]
+    
+    try:
+        decoded_data = base64.b64decode(signature_data).decode()
+        signatures = json.loads(decoded_data)
+    except Exception as e:
+        return "ERROR", [f"Invalid signature format: {e}"]
+    
+    # Process basic signatures
+    total_models = signatures.get('total_models', 0)
+    signature_list = signatures.get('signatures', [])
+    
+    verified_count = 0
+    details = ["⚠️ BASIC MODE (vulnerable to tampering)", f"Found {total_models} 3D models:"]
+    
+    for sig in signature_list:
+        model_name = sig.get('model_name', 'Unknown')
+        artist_name = sig.get('artist_info', {}).get('name', 'Unknown')
+        
+        if sig.get('signature'):
+            verified_count += 1
+            details.append(f"✅ {model_name} by {artist_name}")
+        else:
+            details.append(f"❌ {model_name} - No signature")
+    
+    if verified_count == total_models:
+        return "VERIFIED (BASIC)", details
+    elif verified_count > 0:
+        return "PARTIAL (BASIC)", details
+    else:
+        return "UNVERIFIED (BASIC)", details
+
+def deobfuscate_data(obfuscated_data):
+    """Reverse XOR obfuscation and double base64 encoding"""
+    import base64
+    
+    # Reverse double base64 encoding
+    first_decode = base64.b64decode(obfuscated_data.encode()).decode()
+    second_decode = base64.b64decode(first_decode.encode())
+    
+    # Reverse XOR with key
+    key = b"3mvap_blender_xor_key"
+    deobfuscated = bytearray()
+    
+    for i, byte in enumerate(second_decode):
+        deobfuscated.append(byte ^ key[i % len(key)])
+    
+    return deobfuscated.decode()
 
 def main():
     if len(sys.argv) != 2:

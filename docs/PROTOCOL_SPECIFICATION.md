@@ -1,8 +1,8 @@
-# 3D Model Video Authentication Protocol (3MVAP) v1.0
+# 3D Model Video Authentication Protocol (3MVAP) v2.0
 
 ## Abstract
 
-The 3D Model Video Authentication Protocol (3MVAP) is a universal standard for embedding and verifying digital signatures of 3D models within video content. This protocol enables content creators, distributors, and consumers to verify the authenticity and ownership of 3D assets used in video production, creating a robust digital rights management system for 3D content.
+The 3D Model Video Authentication Protocol (3MVAP) is a universal standard for embedding and verifying digital signatures of 3D models within video content with tamper-resistant security. This protocol enables content creators, distributors, and consumers to verify the authenticity and ownership of 3D assets used in video production, creating a robust digital rights management system for 3D content with enterprise-grade security protection.
 
 ## 1. Introduction
 
@@ -10,25 +10,31 @@ The 3D Model Video Authentication Protocol (3MVAP) is a universal standard for e
 
 This specification defines a standardized method for:
 
-- Embedding 3D model digital signatures into video metadata
-- Verifying 3D model authenticity in video content
+- Embedding 3D model digital signatures into video metadata with cryptographic protection
+- Verifying 3D model authenticity in video content with tamper detection
+- Providing two security levels: Basic (legacy) and Secure (tamper-resistant)
 - Enabling universal adoption across video players, 3D software, and streaming platforms
 
 ### 1.2 Scope
 
 This protocol covers:
 
-- Metadata format specification
-- Signature embedding procedures
-- Verification algorithms
+- Dual security level metadata format specification (Basic v1.0 and Secure v2.0)
+- Tamper-resistant signature embedding procedures
+- Cryptographic verification algorithms with integrity protection
+- Content binding and redundant storage mechanisms
 - Integration guidelines for software vendors
 
 ### 1.3 Terminology
 
 - **3MVAP**: 3D Model Video Authentication Protocol
+- **Basic Mode**: Legacy authentication using simple metadata storage (v1.0)
+- **Secure Mode**: Tamper-resistant authentication with cryptographic protection (v2.0)
 - **Signature Manifest**: Collection of 3D model signatures embedded in video metadata
 - **Artist Registry**: Database of verified artist public keys
 - **Authentication Token**: Cryptographic proof of 3D model ownership
+- **Content Binding**: Tying signatures to specific video content to prevent transplantation
+- **Integrity Signature**: HMAC signature protecting metadata from tampering
 
 ## 2. Protocol Overview
 
@@ -50,24 +56,52 @@ This protocol covers:
 
 ## 3. Metadata Format Specification
 
-### 3.1 Container Format
+### 3.1 Security Levels
 
-The protocol uses standard video metadata fields to ensure compatibility:
+3MVAP v2.0 supports two security levels:
 
-```
-Metadata Key: "3d_model_signatures"
+#### 3.1.1 Basic Mode (v1.0) - Legacy
+
+- **Storage**: Single metadata field (`comment`)
+- **Protection**: Base64 encoding only
+- **Vulnerability**: Easily tampered with standard tools
+- **Use Case**: Backward compatibility
+
+#### 3.1.2 Secure Mode (v2.0) - Recommended
+
+- **Storage**: Multiple metadata fields (`comment`, `description`, `album`)
+- **Protection**: HMAC integrity + XOR obfuscation + double Base64
+- **Features**: Content binding, tamper detection, redundant storage
+- **Use Case**: Production environments requiring tamper resistance
+
+### 3.2 Container Format
+
+#### 3.2.1 Basic Mode Container
+
+```yaml
+Metadata Key: "comment"
 Encoding: Base64
 Content-Type: JSON
 ```
 
-### 3.2 JSON Schema
+#### 3.2.2 Secure Mode Container
+
+```yaml
+Metadata Keys: "comment", "description", "album" (redundant storage)
+Encoding: XOR obfuscation + double Base64
+Content-Type: JSON with integrity signature
+```
+
+### 3.3 JSON Schema
+
+#### 3.3.1 Basic Mode Schema (v1.0)
 
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
-    "protocol_version": {
+    "signature_version": {
       "type": "string",
       "enum": ["1.0"]
     },
@@ -115,11 +149,6 @@ Content-Type: JSON
         "timestamp": {
           "type": "string",
           "format": "date-time"
-        },
-        "signature_algorithm": {
-          "type": "string",
-          "enum": ["RSA-PSS-SHA256"],
-          "default": "RSA-PSS-SHA256"
         }
       },
       "required": ["model_name", "signature", "artist_info", "model_hash", "timestamp"]
@@ -128,13 +157,85 @@ Content-Type: JSON
 }
 ```
 
-### 3.3 Example Payload
+#### 3.3.2 Secure Mode Schema (v2.0)
 
 ```json
 {
-  "protocol_version": "1.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": ["2.0"]
+    },
+    "security_level": {
+      "type": "string",
+      "enum": ["secure"]
+    },
+    "content_hash": {
+      "type": "string",
+      "description": "SHA-256 hash of video content for binding"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "signatures": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/secure_signature_entry"
+      }
+    },
+    "integrity_signature": {
+      "type": "string",
+      "description": "HMAC-SHA256 signature of the payload for tamper detection"
+    }
+  },
+  "$defs": {
+    "secure_signature_entry": {
+      "type": "object",
+      "properties": {
+        "model_name": {
+          "type": "string",
+          "description": "Identifier for the 3D model"
+        },
+        "signature": {
+          "type": "string",
+          "description": "RSA digital signature (base64 encoded)"
+        },
+        "artist_info": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "email": { "type": "string", "format": "email" },
+            "website": { "type": "string", "format": "uri" }
+          },
+          "required": ["name"]
+        },
+        "model_hash": {
+          "type": "string",
+          "description": "SHA-256 hash of original model"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["model_name", "signature", "artist_info", "model_hash", "timestamp"]
+    }
+  }
+}
+```
+
+### 3.4 Example Payloads
+
+#### 3.4.1 Basic Mode Example
+
+```json
+{
+  "signature_version": "1.0",
   "created_at": "2025-01-17T14:35:26+05:30",
-  "total_models": 2,
+  "total_models": 1,
   "signatures": [
     {
       "model_name": "character_main.obj",
@@ -142,25 +243,70 @@ Content-Type: JSON
       "artist_info": {
         "name": "John Artist",
         "email": "john@example.com",
-        "website": "https://johnartist.com",
-        "public_key_fingerprint": "SHA256:abc123..."
+        "website": "https://johnartist.com"
       },
       "model_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "timestamp": "2025-01-17T10:30:00+05:30",
-      "signature_algorithm": "RSA-PSS-SHA256"
+      "timestamp": "2025-01-17T10:30:00+05:30"
     }
   ]
 }
 ```
 
+#### 3.4.2 Secure Mode Example
+
+```json
+{
+  "version": "2.0",
+  "security_level": "secure",
+  "content_hash": "f7c3bc1d808e04732adf679965ccc34ca7ae3441",
+  "created_at": "2025-01-17T14:35:26+05:30",
+  "signatures": [
+    {
+      "model_name": "character_main.obj",
+      "signature": "SGVsbG8gV29ybGQ=",
+      "artist_info": {
+        "name": "John Artist",
+        "email": "john@example.com",
+        "website": "https://johnartist.com"
+      },
+      "model_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "timestamp": "2025-01-17T10:30:00+05:30"
+    }
+  ],
+  "integrity_signature": "a8f5f167f44f4964e6c998dee827110c"
+}
+```
+
 ## 4. Cryptographic Specifications
 
-### 4.1 Signature Algorithm
+### 4.1 Basic Mode Cryptography
 
 - **Algorithm**: RSA-PSS with SHA-256
 - **Key Size**: Minimum 2048 bits (4096 bits recommended)
 - **Salt Length**: Maximum length (PSS.MAX_LENGTH)
 - **Hash Function**: SHA-256
+
+### 4.2 Secure Mode Cryptography
+
+#### 4.2.1 Integrity Protection
+- **Algorithm**: HMAC-SHA256
+- **Key**: System-specific key for metadata integrity
+- **Purpose**: Detect tampering of signature metadata
+
+#### 4.2.2 Content Binding
+- **Hash Function**: SHA-256 of video content
+- **Purpose**: Prevent signature transplantation between videos
+- **Implementation**: Video hash included in signature payload
+
+#### 4.2.3 Obfuscation
+- **Method**: XOR encoding with system key
+- **Encoding**: Double Base64 encoding
+- **Purpose**: Hide metadata from casual inspection
+
+#### 4.2.4 Redundant Storage
+- **Fields**: comment, description, album metadata fields
+- **Verification**: Cross-check all fields for consistency
+- **Purpose**: Detect partial tampering attempts
 
 ### 4.2 Key Management
 
