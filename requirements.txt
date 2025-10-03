@@ -1,2 +1,4 @@
 streamlit
 cryptography
+python-pptx
+python-docx
