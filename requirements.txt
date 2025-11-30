@@ -1,4 +1,7 @@
 streamlit
 cryptography
+numpy
+scipy
+pandas
 python-pptx
 python-docx
